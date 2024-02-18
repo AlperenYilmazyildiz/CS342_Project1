@@ -51,4 +51,5 @@ void handle_client_request(int cs_fd, int sc_fd, int wsize) {
     // TODO: Implement command handling logic
     // Read command from cs_fd
     // Execute command and write result to sc_fd
+    //deneme
 }
