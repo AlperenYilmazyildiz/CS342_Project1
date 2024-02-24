@@ -24,8 +24,8 @@ int bufferlen;
 struct message *messagep;
 
 // Function prototypes
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType);
-void handle_client_request(const char* cs_fd, const char* sc_fd);
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd);
+void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd);
 unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
@@ -92,8 +92,10 @@ int main(int argc, char *argv[]) {
         clientId = atoi(strtok(NULL, " "));
         wSize = atoi(strtok(NULL, " "));
 
-        serve_client(csName, scName, wSize, messageType);
-        handle_client_request(csName, scName);
+        int sc, cs;
+
+        serve_client(csName, scName, wSize, messageType, &sc, &cs);
+        handle_client_request(csName, scName, sc, cs);
 
     }
 
@@ -107,7 +109,7 @@ int main(int argc, char *argv[]) {
 }
 
 // Function to serve a connected client
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType) {
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd) {
     // TODO: Implement client-serving logic
     if(messageType == 1){
         printf("CONREQUEST received");
@@ -115,6 +117,27 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
         printf("sc name %s\n", sc_pipe_name);
         printf("wsize %d\n", wsize);
         printf("message type %d\n", messageType);
+
+        *cs_fd = open(cs_pipe_name, O_RDONLY);
+        if (*cs_fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+        else{
+            printf("cs pipe opened\n");
+        }
+
+        *sc_fd = open(sc_pipe_name, O_WRONLY);
+        if (*sc_fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+        else{
+            printf("sc pipe opened\n");
+            write(*sc_fd, "anan başarıyla bağlandı\n", sizeof("anan başarıyla bağlandı\n"));
+        }
+
+
     }
     else if(messageType == 2){
         printf("CONRESULT received");
@@ -136,26 +159,32 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
     }
     // Open named pipes for communication
     // Call handle_client_request() to handle client commands
+    // TODO: close pipes
+    // TODO: return int cs_fd and sc_fd
 }
 
 
 void execute_command(const char *command_line, const char *output_file, int sc_fd) {
     pid_t pid = fork();
+    printf("command line 1 %s\n", command_line);
     if (pid < 0) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {  // Child process (runner child)
         // Redirect standard output to the output file
         int fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+        printf("command line 2 %s\n", command_line);
         if (fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
         }
         dup2(fd, STDOUT_FILENO);
         close(fd);
-
+        printf("command line 3 %s\n", command_line);
         // Execute the command
+        printf("anan\n");
         execl("/bin/sh", "sh", "-c", command_line, NULL);
+        printf("baban\n");
         printf("Output file: %s\n", output_file);
 
         // If exec fails, print error and exit
@@ -193,12 +222,11 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
 }
 
 // Function to handle client commands
-void handle_client_request(const char* cs_fd_str, const char* sc_fd_str) {
+void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd) {
     // Convert string parameters to file descriptors
-    int cs_fd = atoi(cs_fd_str);
-    int sc_fd = atoi(sc_fd_str);
+    // open pipes
 
-    printf( "%d",sc_fd);
+    printf( "sc_fd bu %d\n",sc_fd);
     // Read command from cs_fd
     char command[MAX_COMMAND_LENGTH];
     ssize_t bytes_read = read(cs_fd, command, sizeof(command));

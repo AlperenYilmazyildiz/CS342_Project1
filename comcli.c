@@ -29,7 +29,7 @@ int bufferlen;
 struct message *messagep;
 
 // Function prototypes
-int create_named_pipe(const char *pipe_name);
+void create_named_pipe(const char *pipe_name);
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE);
 void send_command(const char *cs_pipe_name, const char *command);
 void receive_result(const char *sc_pipe_name);
@@ -68,8 +68,30 @@ int main(int argc, char *argv[]) {
     // Send connection request to server
     send_connection_request(MQNAME, cs_pipe_name, sc_pipe_name, client_id, WSIZE);
 
+    // open pipes
+    int cs_fd = open(cs_pipe_name, O_WRONLY);
+    if (cs_fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    else{
+        printf("cs pipe opened\n");
+    }
+
+    int sc_fd = open(sc_pipe_name, O_RDONLY);
+    if (sc_fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    else{
+        printf("sc pipe opened\n");
+    }
+
     // Wait for server response
     // TODO: Implement wait for server response
+    char connectionResult[30];
+    read(sc_fd, connectionResult, sizeof(connectionResult));
+    printf("%s\n", connectionResult);
 
     // Check for batch mode
     if (argc > 2 && strcmp(argv[2], "-b") == 0) {
@@ -101,7 +123,6 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
     mqd_t mq;
     struct mq_attr mqAttr;
     int n;
-    int l;
 
     mq = mq_open(mq_name, O_RDWR);
     if(mq == -1){
@@ -128,6 +149,8 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
         perror("mq send failed \n");
         exit(1);
     }
+
+    // TODO: close message queue
 }
 
 // Function to send command to server
@@ -192,7 +215,7 @@ void batch_mode(const char *mq_name, const char *com_file) {
 }
 
 // Function to create a named pipe
-int create_named_pipe(const char *pipe_name) {
+void create_named_pipe(const char *pipe_name) {
     // Check if the named pipe exists
     if (access(pipe_name, F_OK) != -1) {
         // Named pipe already exists
@@ -209,12 +232,12 @@ int create_named_pipe(const char *pipe_name) {
     }
 
     // Open the named pipe for reading and writing
-    int fd = open(pipe_name, O_RDWR);
+    /*int fd = open(pipe_name, O_RDWR);
     if (fd == -1) {
         perror("open");
         exit(EXIT_FAILURE);
     }
 
-    return fd;
+    return fd;*/
 }
 
