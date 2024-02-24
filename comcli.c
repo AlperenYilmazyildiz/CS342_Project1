@@ -7,16 +7,26 @@
 #include <string.h>
 #include <errno.h>
 #include <mqueue.h>
-#include "msg_buffer.h"
+#include "msg_item.h"
+#include "message.h"
 
 #define MAX_PIPE_NAME 50
 #define MAXFILENAME 64
 #define MAX_COMMAND_LENGTH 100
 #define MAX_BUFFER_SIZE 1024
 
+// Define constants for message types
+#define CONREQUEST_TYPE 1
+#define CONRESULT_TYPE    2
+#define COMLINE_TYPE 3
+#define COMRESULT_TYPE 4
+#define QUITREQ_TYPE 5
+#define QUITREPLY_TYPE 6
+#define QUITALL_TYPE 7
+
 char *bufferp;
 int bufferlen;
-struct msg_buffer * messagep;
+struct message *messagep;
 
 // Function prototypes
 int create_named_pipe(const char *pipe_name);
@@ -57,7 +67,7 @@ int main(int argc, char *argv[]) {
     // TODO: Implement wait for server response
 
     // Check for batch mode
-    if (argc > 2 && strcmp(argv[2], "-b") == 0) {
+    /*if (argc > 2 && strcmp(argv[2], "-b") == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: %s MQNAME -b COMFILE\n", argv[0]);
             exit(EXIT_FAILURE);
@@ -68,7 +78,7 @@ int main(int argc, char *argv[]) {
     } else {
         // Interactive mode
         interactive_mode(cs_pipe_name, sc_pipe_name);
-    }
+    }*/
     char MQNAME[MAXFILENAME];
     snprintf(MQNAME, sizeof(MQNAME), "%s", argv[1]);
 
@@ -83,7 +93,31 @@ int main(int argc, char *argv[]) {
     int n;
     int l;
 
-    //mq = mq_open()
+    mq = mq_open(MQNAME, O_RDWR);
+    if(mq == -1){
+        perror("cannot open msg queue\n");
+        exit(1);
+    }
+    printf("mq opened, mq id = %d\n", (int)mq);
+
+    mq_getattr(mq, &mqAttr);
+    printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
+    bufferlen = mqAttr.mq_msgsize;
+    bufferp = (char *) malloc(bufferlen);
+
+    messagep = (struct message *) bufferp;
+    messagep->type[0] = CONREQUEST_TYPE;
+    messagep->length[0] = 9;
+    messagep->length[1] = 1;
+    messagep->length[2] = 4;
+    messagep->length[3] = 2;
+
+    n = mq_send(mq, bufferp, sizeof(struct message), 0);
+    //printf( 'size of msg item %zu', );
+    if (n == -1){
+        perror("mq send failed \n");
+        exit(1);
+    }
 
     // TODO: Parse command-line arguments and call appropriate mode
     // Interactive mode or batch mode

@@ -9,7 +9,8 @@
 #include <sys/msg.h>
 #include <errno.h>
 #include <mqueue.h>
-#include "msg_buffer.h"
+#include "msg_item.h"
+#include "message.h"
 
 #define MAX_CLIENTS 10
 #define MAX_PIPE_NAME 50
@@ -19,7 +20,7 @@
 
 char *bufferp;
 int bufferlen;
-struct msg_buffer * messagep;
+struct message *messagep;
 
 // Function prototypes
 void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize);
@@ -62,10 +63,14 @@ int main(int argc, char *argv[]) {
         }
         printf("mq receive success, message size = %d\n", n);
 
-        messagep = (struct msg_buffer*) bufferp;
+        messagep = (struct message*) bufferp;
 
-        printf("received item.id = %ld\n", messagep->msg_type);
-        printf("received item.astr = %s\n", messagep->mq_data);
+        printf("received message type = %d\n",  messagep->type[0]);
+        printf("received length %d \n", messagep->length[0]);
+        printf("received length %c \n", messagep->length[1]);
+        printf("received length %c \n", messagep->length[2]);
+        unsigned int x = (messagep->length[3] << 24) + (messagep->length[2] << 16) + (messagep->length[1] << 8) + (messagep->length[0]);
+        printf ("x = %u\n", x); // 33816841 will be printed
         printf("\n");
     }
 
