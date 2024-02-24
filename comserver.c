@@ -23,8 +23,9 @@ int bufferlen;
 struct message *messagep;
 
 // Function prototypes
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize);
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType);
 void handle_client_request(int cs_fd, int sc_fd, int wsize);
+unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
     // Check command-line arguments
@@ -65,13 +66,33 @@ int main(int argc, char *argv[]) {
 
         messagep = (struct message*) bufferp;
 
-        printf("received message type = %d\n",  messagep->type[0]);
-        printf("received length %d \n", messagep->length[0]);
-        printf("received length %c \n", messagep->length[1]);
-        printf("received length %c \n", messagep->length[2]);
-        unsigned int x = (messagep->length[3] << 24) + (messagep->length[2] << 16) + (messagep->length[1] << 8) + (messagep->length[0]);
-        printf ("x = %u\n", x); // 33816841 will be printed
-        printf("\n");
+        unsigned char length[4];
+        unsigned int messageType;
+        char *data;
+
+        length[0] = messagep->length[0];
+        length[1] = messagep->length[1];
+        length[2] = messagep->length[2];
+        length[3] = messagep->length[3];
+
+        messageType = messagep->type[0];
+
+        data = messagep->data;
+
+        printf("message data %s\n", data);
+
+        char *scName;
+        char *csName;
+        int clientId;
+        int wSize;
+
+        scName = strtok(data, " ");
+        csName = strtok(NULL, " ");
+        clientId = atoi(strtok(NULL, " "));
+        wSize = atoi(strtok(NULL, " "));
+
+        serve_client(csName, scName, wSize, messageType);
+
     }
 
     free(bufferp);
@@ -84,8 +105,33 @@ int main(int argc, char *argv[]) {
 }
 
 // Function to serve a connected client
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize) {
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType) {
     // TODO: Implement client-serving logic
+    if(messageType == 1){
+        printf("CONREQUEST received");
+        printf("cs name %s\n", cs_pipe_name);
+        printf("sc name %s\n", sc_pipe_name);
+        printf("wsize %d\n", wsize);
+        printf("message type %d\n", messageType);
+    }
+    else if(messageType == 2){
+        printf("CONRESULT received");
+    }
+    else if(messageType == 3){
+        printf("COMLINE received");
+    }
+    else if(messageType == 4){
+        printf("COMRESULT received");
+    }
+    else if(messageType == 5){
+        printf("QUITREQ received");
+    }
+    else if(messageType == 6){
+        printf("QUITREPLY received");
+    }
+    else if(messageType == 7){
+        printf("QUITALL received");
+    }
     // Open named pipes for communication
     // Call handle_client_request() to handle client commands
 }
@@ -95,5 +141,10 @@ void handle_client_request(int cs_fd, int sc_fd, int wsize) {
     // TODO: Implement command handling logic
     // Read command from cs_fd
     // Execute command and write result to sc_fd
-    //deneme
+}
+
+// Function to convert little endian format
+unsigned int little_endian_convert(unsigned char data[4]){
+    unsigned int x = (data[3] << 24) + (data[2] << 16) + (data[1] << 8) + (data[0]);
+    return x;
 }

@@ -43,12 +43,17 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // Extract MQNAME from command-line arguments
-    const char *mq_name = argv[1];
-
     // Client ID and maximum message size
     int client_id = getpid(); // Using process ID as client ID
     int WSIZE = atoi((argv[3])); // Example maximum message size
+
+    char MQNAME[MAXFILENAME];
+    snprintf(MQNAME, sizeof(MQNAME), "%s", argv[1]);
+
+    char COMFILE[MAXFILENAME];
+    snprintf(COMFILE, sizeof(COMFILE), "%s", argv[2]);
+
+    printf("%s %s %d", MQNAME, COMFILE, WSIZE);
 
     // Named pipe names
     char cs_pipe_name[MAX_PIPE_NAME];
@@ -61,62 +66,23 @@ int main(int argc, char *argv[]) {
     create_named_pipe(sc_pipe_name);
 
     // Send connection request to server
-    send_connection_request(mq_name, cs_pipe_name, sc_pipe_name, client_id, WSIZE);
+    send_connection_request(MQNAME, cs_pipe_name, sc_pipe_name, client_id, WSIZE);
 
     // Wait for server response
     // TODO: Implement wait for server response
 
     // Check for batch mode
-    /*if (argc > 2 && strcmp(argv[2], "-b") == 0) {
+    if (argc > 2 && strcmp(argv[2], "-b") == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: %s MQNAME -b COMFILE\n", argv[0]);
             exit(EXIT_FAILURE);
         }
-        // Batch mode
+        // Batch modee
         const char *com_file = argv[3];
-        batch_mode(mq_name, com_file);
+        batch_mode(MQNAME, com_file);
     } else {
         // Interactive mode
         interactive_mode(cs_pipe_name, sc_pipe_name);
-    }*/
-    char MQNAME[MAXFILENAME];
-    snprintf(MQNAME, sizeof(MQNAME), "%s", argv[1]);
-
-    char COMFILE[MAXFILENAME];
-    snprintf(COMFILE, sizeof(COMFILE), "%s", argv[2]);
-
-    printf("%s %s %d", MQNAME, COMFILE, WSIZE);
-
-    // TODO send connection request message to server with message queue
-    mqd_t mq;
-    struct mq_attr mqAttr;
-    int n;
-    int l;
-
-    mq = mq_open(MQNAME, O_RDWR);
-    if(mq == -1){
-        perror("cannot open msg queue\n");
-        exit(1);
-    }
-    printf("mq opened, mq id = %d\n", (int)mq);
-
-    mq_getattr(mq, &mqAttr);
-    printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
-    bufferlen = mqAttr.mq_msgsize;
-    bufferp = (char *) malloc(bufferlen);
-
-    messagep = (struct message *) bufferp;
-    messagep->type[0] = CONREQUEST_TYPE;
-    messagep->length[0] = 9;
-    messagep->length[1] = 1;
-    messagep->length[2] = 4;
-    messagep->length[3] = 2;
-
-    n = mq_send(mq, bufferp, sizeof(struct message), 0);
-    //printf( 'size of msg item %zu', );
-    if (n == -1){
-        perror("mq send failed \n");
-        exit(1);
     }
 
     // TODO: Parse command-line arguments and call appropriate mode
@@ -130,6 +96,38 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
     // Send connection request message to server over message queue
     // Include cs_pipe_name, sc_pipe_name, client_id, and WSIZE in the message
     // TODO: Implement sending connection request message
+
+    // TODO send connection request message to server with message queue
+    mqd_t mq;
+    struct mq_attr mqAttr;
+    int n;
+    int l;
+
+    mq = mq_open(mq_name, O_RDWR);
+    if(mq == -1){
+        perror("cannot open msg queue\n");
+        exit(1);
+    }
+    printf("mq opened, mq id = %d\n", (int)mq);
+
+    mq_getattr(mq, &mqAttr);
+    printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
+    bufferlen = mqAttr.mq_msgsize;
+    bufferp = (char *) malloc(bufferlen);
+
+    messagep = (struct message *) bufferp;
+    messagep->type[0] = CONREQUEST_TYPE;
+    messagep->length[0] = 0;
+    messagep->length[1] = 0;
+    messagep->length[2] = 0;
+    messagep->length[3] = 0;
+    snprintf(messagep->data, sizeof(struct message), "%s %s %d %d", sc_pipe_name,  cs_pipe_name, client_id, WSIZE);
+    printf("comcli message data %s\n", messagep->data);
+    n = mq_send(mq, bufferp, sizeof(struct message), 0);
+    if (n == -1){
+        perror("mq send failed \n");
+        exit(1);
+    }
 }
 
 // Function to send command to server
