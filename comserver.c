@@ -9,6 +9,7 @@
 #include <sys/msg.h>
 #include <errno.h>
 #include <mqueue.h>
+#include <sys/wait.h>
 #include "msg_item.h"
 #include "message.h"
 
@@ -24,7 +25,7 @@ struct message *messagep;
 
 // Function prototypes
 void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType);
-void handle_client_request(int cs_fd, int sc_fd, int wsize);
+void handle_client_request(const char* cs_fd, const char* sc_fd);
 unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
@@ -92,6 +93,7 @@ int main(int argc, char *argv[]) {
         wSize = atoi(strtok(NULL, " "));
 
         serve_client(csName, scName, wSize, messageType);
+        handle_client_request(csName, scName);
 
     }
 
@@ -136,13 +138,96 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
     // Call handle_client_request() to handle client commands
 }
 
-// Function to handle client commands
-void handle_client_request(int cs_fd, int sc_fd, int wsize) {
-    // TODO: Implement command handling logic
-    // Read command from cs_fd
-    // Execute command and write result to sc_fd
+
+void execute_command(const char *command_line, const char *output_file, int sc_fd) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {  // Child process (runner child)
+        // Redirect standard output to the output file
+        int fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+        if (fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+
+        // Execute the command
+        execl("/bin/sh", "sh", "-c", command_line, NULL);
+        printf("Output file: %s\n", output_file);
+
+        // If exec fails, print error and exit
+        perror("execl");
+        exit(EXIT_FAILURE);
+    } else { // Parent process (server child)
+        // Wait for the runner child to finish
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("waitpid");
+            exit(EXIT_FAILURE);
+        }
+
+        // Open the output file for reading
+        int output_fd = open(output_file, O_RDONLY);
+        if (output_fd == -1) {
+            perror("open");
+            exit(EXIT_FAILURE);
+        }
+
+        // Read the content of the output file and send it through sc_fd
+        char buffer[MAX_BUFFER_SIZE];
+        ssize_t bytes_read;
+        while ((bytes_read = read(output_fd, buffer, sizeof(buffer))) > 0) {
+            // Write the content to the sc pipe
+            if (write(sc_fd, buffer, bytes_read) == -1) {
+                perror("write");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        // Close the output file
+        close(output_fd);
+    }
 }
 
+// Function to handle client commands
+void handle_client_request(const char* cs_fd_str, const char* sc_fd_str) {
+    // Convert string parameters to file descriptors
+    int cs_fd = atoi(cs_fd_str);
+    int sc_fd = atoi(sc_fd_str);
+
+    printf( "%d",sc_fd);
+    // Read command from cs_fd
+    char command[MAX_COMMAND_LENGTH];
+    ssize_t bytes_read = read(cs_fd, command, sizeof(command));
+    if (bytes_read == -1) {
+        perror("read");
+        exit(EXIT_FAILURE);
+    }
+
+    // Execute command and write result to sc_fd
+    char output_file[] = "output.txt"; // You can choose a different name or generate a unique name
+    execute_command(command, output_file, sc_fd);
+
+    // Send the result back to the client through sc_fd
+    int output_fd = open(output_file, O_RDONLY);
+    if (output_fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
+        if (write(sc_fd, command, bytes_read) == -1) {
+            perror("write");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Close the output file
+    close(output_fd);
+}
 // Function to convert little endian format
 unsigned int little_endian_convert(unsigned char data[4]){
     unsigned int x = (data[3] << 24) + (data[2] << 16) + (data[1] << 8) + (data[0]);
