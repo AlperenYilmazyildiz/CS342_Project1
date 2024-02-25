@@ -169,7 +169,7 @@ void receive_result(const char *sc_pipe_name) {
 
 // Function to operate in interactive mode
 void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd) {
-    printf("Interactive mode: Enter commands (type 'exit' to quit):\n");
+    printf("Interactive mode: Enter commands (type 'quit' to quit):\n");
     char command[MAX_COMMAND_LENGTH];
     while (1) {
         printf("> ");
@@ -181,8 +181,9 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         command[strcspn(command, "\n")] = '\0';
 
         // Check if the user wants to exit
-        if (strcmp(command, "exit") == 0) {
+        if (strcmp(command, "quit") == 0) {
             printf("Exiting interactive mode.\n");
+            send_command(cs_pipe_name, command, cs_fd);
             break;
         }
 

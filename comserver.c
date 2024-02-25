@@ -167,27 +167,22 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
 
 void execute_command(const char *command_line, const char *output_file, int sc_fd) {
     pid_t pid = fork();
-    printf("command line 1 %s\n", command_line);
     if (pid < 0) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {  // Child process (runner child)
         // Redirect standard output to the output file
         int fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-        printf("command line 2 %s\n", command_line);
+        printf("executing command %s\n", command_line);
         if (fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
         }
         dup2(fd, STDOUT_FILENO);
         close(fd);
-        printf("command line 3 %s\n", command_line);
         // Execute the command
-        printf("anan\n");
         execl("/bin/sh", "sh", "-c", command_line, NULL);
-        printf("baban\n");
         printf("Output file: %s\n", output_file);
-
         // If exec fails, print error and exit
         perror("execl");
         exit(EXIT_FAILURE);
@@ -199,8 +194,8 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
             exit(EXIT_FAILURE);
         }
 
-        // Open the output file for reading
-        int output_fd = open(output_file, O_RDONLY);
+        // Open the output file in append mode
+        int output_fd = open(output_file, O_CREAT | O_WRONLY | O_APPEND, 0666);
         if (output_fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
@@ -225,7 +220,13 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
 // Function to handle client commands
 void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd) {
     // Convert string parameters to file descriptors
-    // open pipes
+
+    char output_file[] = "output.txt";
+    int output_fd = open(output_file, O_RDONLY);
+    if (output_fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
 
     // Read command from cs_fd
     char command[MAX_COMMAND_LENGTH];
@@ -234,26 +235,22 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
         perror("read");
         exit(EXIT_FAILURE);
     }
-    printf("%s\n", command);
-
-    // Execute command and write result to sc_fd
-    char output_file[] = "output.txt"; // You can choose a different name or generate a unique name
-    execute_command(command, output_file, sc_fd);
+    printf("command: %s\n", command);
 
     // Send the result back to the client through sc_fd
-    int output_fd = open(output_file, O_RDONLY);
-    if (output_fd == -1) {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
-
-    while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
-        if (write(sc_fd, command, bytes_read) == -1) {
-            perror("write");
-            exit(EXIT_FAILURE);
+    while (strcmp(command, "quit") != 0 ){
+        // Execute command and write result to sc_fd
+        printf("loop %s\n", command);
+        execute_command(command, output_file, sc_fd);
+        while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
+            if (write(sc_fd, command, bytes_read) == -1) {
+                perror("write");
+                exit(EXIT_FAILURE);
+            }
         }
+        printf("afa\n");
+        read(cs_fd, command, sizeof(command));
     }
-
     // Close the output file
     close(output_fd);
 }
