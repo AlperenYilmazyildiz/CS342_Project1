@@ -95,6 +95,7 @@ int main(int argc, char *argv[]) {
         int sc, cs;
 
         serve_client(csName, scName, wSize, messageType, &sc, &cs);
+        printf("after serving client sc %d cs %d\n", sc, cs);
         handle_client_request(csName, scName, sc, cs);
 
     }
@@ -226,7 +227,6 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
     // Convert string parameters to file descriptors
     // open pipes
 
-    printf( "sc_fd bu %d\n",sc_fd);
     // Read command from cs_fd
     char command[MAX_COMMAND_LENGTH];
     ssize_t bytes_read = read(cs_fd, command, sizeof(command));
@@ -234,6 +234,7 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
         perror("read");
         exit(EXIT_FAILURE);
     }
+    printf("%s\n", command);
 
     // Execute command and write result to sc_fd
     char output_file[] = "output.txt"; // You can choose a different name or generate a unique name
