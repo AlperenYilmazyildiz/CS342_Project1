@@ -4,7 +4,7 @@
 
 #ifndef CS342_PROJECT1_MSG_ITEM_H
 #define CS342_PROJECT1_MSG_ITEM_H
-#define MAX_PIPE_NAME 50
+#define MAX_PIPE_NAME 64
 
 #include "message.h"
 

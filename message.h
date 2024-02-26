@@ -6,7 +6,6 @@
 #define CS342_PROJECT1_MESSAGE_H
 #include <stdint.h>
 
-
 // Define the message structure
 struct message {
     unsigned char length[4];    // Total message size (4 bytes)

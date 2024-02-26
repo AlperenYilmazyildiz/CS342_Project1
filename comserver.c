@@ -15,9 +15,9 @@
 #include <sys/stat.h>
 
 #define MAX_CLIENTS 5
-#define MAX_PIPE_NAME 50
+#define MAX_PIPE_NAME 64
 #define MAXFILENAME 64
-#define MAX_COMMAND_LENGTH 100
+#define MAX_COMMAND_LENGTH 256
 #define MAX_BUFFER_SIZE 1024
 
 // Define constants for message types
@@ -266,6 +266,8 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
 
     // Read command from cs_fd
     char command[MAX_COMMAND_LENGTH];
+    printf("command size: %lu\n", sizeof(command));
+    printf("command ls | ps aux size: %lu\n", sizeof("ls | ps aux"));
     ssize_t bytes_read = read(cs_fd, command, sizeof(command));
     if (bytes_read == -1) {
         perror("read");
@@ -278,17 +280,17 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
         // Execute command and write result to sc_fd
         printf("loop %s\n", command);
         execute_command(command, sc_fd);
-        while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
-            int noOfChunks = (int) bytes_read / wsize;
-            printf("bytes read %d\n", (int) bytes_read);
-            printf("no of chunks %d\n", noOfChunks);
-            for (int i = 0; i < noOfChunks; ++i) {
+        //while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
+            //int noOfChunks = (int) bytes_read / wsize;
+            //printf("bytes read %d\n", (int) bytes_read);
+            //printf("no of chunks %d\n", noOfChunks);
+            //for (int i = 0; i < noOfChunks; ++i) {
                 if (write(sc_fd, command, wsize) == -1) {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
-            }
-        }
+            //}
+        //}
         //printf("afa\n");
         read(cs_fd, command, sizeof(command));
     }

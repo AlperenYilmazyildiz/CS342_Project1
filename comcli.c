@@ -10,9 +10,9 @@
 #include "msg_item.h"
 #include "message.h"
 
-#define MAX_PIPE_NAME 50
+#define MAX_PIPE_NAME 64
 #define MAXFILENAME 64
-#define MAX_COMMAND_LENGTH 100
+#define MAX_COMMAND_LENGTH 256
 #define MAX_BUFFER_SIZE 1024
 
 // Define constants for message types
@@ -31,7 +31,7 @@ struct message *messagep;
 // Function prototypes
 void create_named_pipe(const char *pipe_name);
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE);
-void send_command(const char *cs_pipe_name, const char *command, int csfd);
+void send_command(const char *cs_pipe_name, char *command, int csfd);
 void receive_result(const char *sc_pipe_name, int scfd);
 void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd);
 void batch_mode(const char *mq_name, const char *com_file);
@@ -156,9 +156,11 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
 }
 
 // Function to send command to server
-void send_command(const char *cs_pipe_name, const char *command, int csfd) {
+void send_command(const char *cs_pipe_name, char *command, int csfd) {
     // Send command to server child process through cs_pipe
     // TODO: Implement sending command to server
+    // This is problematic
+    printf("size of send command: %lu\n", sizeof(command));
     write(csfd, command, sizeof(command));
 
 }
@@ -196,17 +198,20 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         }
         // Remove trailing newline character
         command[strcspn(command, "\n")] = '\0';
+        printf("size of command in interactive mode: %lu\n", sizeof(command));
 
         // Check if the user wants to exit
         if (strcmp(command, "quit") == 0) {
             printf("Exiting interactive mode.\n");
-            send_command(cs_pipe_name, command, cs_fd);
+            //send_command(cs_pipe_name, command, cs_fd);
+            write(cs_fd, command, sizeof(command));
             break;
         }
 
         // Send command to server
         printf("Sending command to server: %s\n", command);
-        send_command(cs_pipe_name, command, cs_fd);
+        //send_command(cs_pipe_name, command, cs_fd);
+        write(cs_fd, command, sizeof(command));
         printf("client receive mi\n");
         // Receive result from server
         receive_result(sc_pipe_name, sc_fd);
