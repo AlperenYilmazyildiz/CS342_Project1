@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include "msg_item.h"
 #include "message.h"
+#include <sys/stat.h>
 
 #define MAX_CLIENTS 10
 #define MAX_PIPE_NAME 50
@@ -22,6 +23,8 @@
 char *bufferp;
 int bufferlen;
 struct message *messagep;
+// Global variable for output file descriptor
+int output_fd;
 
 // Function prototypes
 void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid);
@@ -52,6 +55,24 @@ int main(int argc, char *argv[]) {
     printf("mq created, mq id = %d\n", (int) mq);
     mq_getattr(mq, &mqAttr);
     printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
+
+    // Check if the output file already exists
+    struct stat st;
+    if (stat("output.txt", &st) == 0) {
+        // Output file exists, remove it
+        if (remove("output.txt") == -1) {
+            perror("remove");
+            exit(EXIT_FAILURE);
+        }
+        printf("Existing output file 'output.txt' removed.\n");
+    }
+
+    // Open output file in append mode
+    output_fd = open("output.txt", O_CREAT | O_WRONLY | O_APPEND, 0666);
+    if (output_fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
 
     bufferlen = mqAttr.mq_msgsize;
     bufferp = (char*) malloc(bufferlen);
@@ -165,26 +186,18 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
     // TODO: return int cs_fd and sc_fd
 }
 
-
-void execute_command(const char *command_line, const char *output_file, int sc_fd) {
+void execute_command(const char *command_line, int sc_fd) {
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {  // Child process (runner child)
         // Redirect standard output to the output file
-        int fd = open(output_file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
-        printf("executing command %s\n", command_line);
-        if (fd == -1) {
-            perror("open");
-            exit(EXIT_FAILURE);
-        }
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
+        dup2(output_fd, STDOUT_FILENO);
+        close(output_fd);
+
         // Execute the command
         execl("/bin/sh", "sh", "-c", command_line, NULL);
-        printf("Output file: %s\n", output_file);
-        // If exec fails, print error and exit
         perror("execl");
         exit(EXIT_FAILURE);
     } else { // Parent process (server child)
@@ -195,14 +208,8 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
             exit(EXIT_FAILURE);
         }
 
-        // Open the output file in append mode
-        int output_fd = open(output_file, O_CREAT | O_WRONLY | O_APPEND, 0666);
-        if (output_fd == -1) {
-            perror("open");
-            exit(EXIT_FAILURE);
-        }
-
         // Read the content of the output file and send it through sc_fd
+        lseek(output_fd, 0, SEEK_SET); // Move file offset to beginning
         char buffer[MAX_BUFFER_SIZE];
         ssize_t bytes_read;
         while ((bytes_read = read(output_fd, buffer, sizeof(buffer))) > 0) {
@@ -212,9 +219,6 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
                 exit(EXIT_FAILURE);
             }
         }
-
-        // Close the output file
-        close(output_fd);
     }
 }
 
@@ -242,7 +246,7 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
     while (strcmp(command, "quit") != 0 ){
         // Execute command and write result to sc_fd
         printf("loop %s\n", command);
-        execute_command(command, output_file, sc_fd);
+        execute_command(command, sc_fd);
         while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
             int noOfChunks = (int) bytes_read / wsize;
             printf("bytes read %d\n", (int) bytes_read);
@@ -257,9 +261,10 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
         printf("afa\n");
         read(cs_fd, command, sizeof(command));
     }
-    // Close the output file
+    // Close the output file.txt
     close(output_fd);
 }
+
 // Function to convert little endian format
 unsigned int little_endian_convert(unsigned char data[4]){
     unsigned int x = (data[3] << 24) + (data[2] << 16) + (data[1] << 8) + (data[0]);
