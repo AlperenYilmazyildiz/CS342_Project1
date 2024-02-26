@@ -24,8 +24,8 @@ int bufferlen;
 struct message *messagep;
 
 // Function prototypes
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd);
-void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd);
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid);
+void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize);
 unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
@@ -94,9 +94,9 @@ int main(int argc, char *argv[]) {
 
         int sc, cs;
 
-        serve_client(csName, scName, wSize, messageType, &sc, &cs);
+        serve_client(csName, scName, wSize, messageType, &sc, &cs, clientId);
         printf("after serving client sc %d cs %d\n", sc, cs);
-        handle_client_request(csName, scName, sc, cs);
+        handle_client_request(csName, scName, sc, cs, wSize);
 
     }
 
@@ -110,14 +110,14 @@ int main(int argc, char *argv[]) {
 }
 
 // Function to serve a connected client
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd) {
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid) {
     // TODO: Implement client-serving logic
     if(messageType == 1){
-        printf("CONREQUEST received");
-        printf("cs name %s\n", cs_pipe_name);
-        printf("sc name %s\n", sc_pipe_name);
-        printf("wsize %d\n", wsize);
-        printf("message type %d\n", messageType);
+        printf("message: CONREQUEST received ");
+        printf("cs name = %s ", cs_pipe_name);
+        printf("sc name =  %s ", sc_pipe_name);
+        printf("pid = %d ", pid);
+        printf("wsize = %d\n", wsize);
 
         *cs_fd = open(cs_pipe_name, O_RDONLY);
         if (*cs_fd == -1) {
@@ -134,8 +134,9 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
             exit(EXIT_FAILURE);
         }
         else{
-            printf("sc pipe opened\n");
-            write(*sc_fd, "anan başarıyla bağlandı\n", sizeof("anan başarıyla bağlandı\n"));
+            char response[] = "Connection to server is successful\n";
+            int responseSize = sizeof (response);
+            write(*sc_fd, response, responseSize);
         }
 
 
@@ -218,7 +219,7 @@ void execute_command(const char *command_line, const char *output_file, int sc_f
 }
 
 // Function to handle client commands
-void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd) {
+void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize) {
     // Convert string parameters to file descriptors
 
     char output_file[] = "output.txt";
@@ -243,9 +244,14 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
         printf("loop %s\n", command);
         execute_command(command, output_file, sc_fd);
         while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
-            if (write(sc_fd, command, bytes_read) == -1) {
-                perror("write");
-                exit(EXIT_FAILURE);
+            int noOfChunks = (int) bytes_read / wsize;
+            printf("bytes read %d\n", (int) bytes_read);
+            printf("no of chunks %d\n", noOfChunks);
+            for (int i = 0; i < noOfChunks; ++i) {
+                if (write(sc_fd, command, wsize) == -1) {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
             }
         }
         printf("afa\n");
