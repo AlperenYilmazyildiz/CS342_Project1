@@ -17,7 +17,7 @@
 
 // Define constants for message types
 #define CONREQUEST_TYPE 1
-#define CONRESULT_TYPE    2
+#define CONREPLY_TYPE    2
 #define COMLINE_TYPE 3
 #define COMRESULT_TYPE 4
 #define QUITREQ_TYPE 5
@@ -32,8 +32,8 @@ struct message *messagep;
 void create_named_pipe(const char *pipe_name);
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE);
 void send_command(const char *cs_pipe_name, const char *command, int csfd);
-void receive_result(const char *sc_pipe_name);
-void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int csfd);
+void receive_result(const char *sc_pipe_name, int scfd);
+void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd);
 void batch_mode(const char *mq_name, const char *com_file);
 
 int main(int argc, char *argv[]) {
@@ -89,9 +89,11 @@ int main(int argc, char *argv[]) {
 
     // Wait for server response
     // TODO: Implement wait for server response
-    char connectionResult[30];
+    /*char connectionResult[30];
     read(sc_fd, connectionResult, sizeof(connectionResult));
-    printf("%s\n", connectionResult);
+    printf("%s\n", connectionResult);*/
+
+    receive_result(sc_pipe_name, sc_fd);
 
     // Check for batch mode
     if (argc > 2 && strcmp(argv[2], "-b") == 0) {
@@ -104,7 +106,7 @@ int main(int argc, char *argv[]) {
         batch_mode(MQNAME, com_file);
     } else {
         // Interactive mode
-        interactive_mode(cs_pipe_name, sc_pipe_name, cs_fd);
+        interactive_mode(cs_pipe_name, sc_pipe_name, cs_fd, sc_fd);
     }
 
     // TODO: Parse command-line arguments and call appropriate mode
@@ -154,21 +156,36 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
 }
 
 // Function to send command to server
-void send_command(const char *cs_pipe_name, const char *command, int cs_fd) {
+void send_command(const char *cs_pipe_name, const char *command, int csfd) {
     // Send command to server child process through cs_pipe
     // TODO: Implement sending command to server
-    write(cs_fd, command, sizeof(command));
+    write(csfd, command, sizeof(command));
 
 }
 
 // Function to receive result from server
-void receive_result(const char *sc_pipe_name) {
+void receive_result(const char *sc_pipe_name, int scfd) {
     // Receive result from server through sc_pipe
     // TODO: Implement receiving result from server
+    struct message *message;
+    char *bufp = (char*) malloc(sizeof (struct message));
+    message = (struct message*) bufp;
+    read(scfd, message, sizeof (struct message));
+
+    if(message->type[0] == 2){
+        printf("message: CONREPLY received ");
+        printf("result = %s ", message->data);
+    }
+    else if(message->type[0] == 4){
+        printf("COMRESULT received");
+    }
+    else if(message->type[0] == 6){
+        printf("QUITREPLY received");
+    }
 }
 
 // Function to operate in interactive mode
-void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd) {
+void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd) {
     printf("Interactive mode: Enter commands (type 'quit' to quit):\n");
     char command[MAX_COMMAND_LENGTH];
     while (1) {
@@ -190,9 +207,10 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         // Send command to server
         printf("Sending command to server: %s\n", command);
         send_command(cs_pipe_name, command, cs_fd);
-
+        printf("client receive mi\n");
         // Receive result from server
-        receive_result(sc_pipe_name);
+        receive_result(sc_pipe_name, sc_fd);
+        printf("skfj\n");
     }
 }
 // Function to operate in batch mode

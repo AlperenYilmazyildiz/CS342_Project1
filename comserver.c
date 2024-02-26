@@ -14,11 +14,20 @@
 #include "message.h"
 #include <sys/stat.h>
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 5
 #define MAX_PIPE_NAME 50
 #define MAXFILENAME 64
 #define MAX_COMMAND_LENGTH 100
 #define MAX_BUFFER_SIZE 1024
+
+// Define constants for message types
+#define CONREQUEST_TYPE 1
+#define CONREPLY_TYPE    2
+#define COMLINE_TYPE 3
+#define COMRESULT_TYPE 4
+#define QUITREQ_TYPE 5
+#define QUITREPLY_TYPE 6
+#define QUITALL_TYPE 7
 
 char *bufferp;
 int bufferlen;
@@ -28,11 +37,13 @@ int output_fd;
 
 // Function prototypes
 void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid);
-void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize);
+unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize);
 unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
     // Check command-line arguments
+    int currentClientCount = 0;
+
     if (argc != 2) {
         fprintf(stderr, "Usage: %s MQNAME\n", argv[0]);
         exit(EXIT_FAILURE);
@@ -114,11 +125,31 @@ int main(int argc, char *argv[]) {
         wSize = atoi(strtok(NULL, " "));
 
         int sc, cs;
-
         serve_client(csName, scName, wSize, messageType, &sc, &cs, clientId);
-        printf("after serving client sc %d cs %d\n", sc, cs);
-        handle_client_request(csName, scName, sc, cs, wSize);
 
+        if(messageType == 1 && currentClientCount < MAX_CLIENTS){
+            pid_t serverChildPid;
+            currentClientCount++;
+            serverChildPid = fork();
+
+            if (serverChildPid < 0) {
+                printf ("fork() failed\n");
+                exit (1);
+            }
+
+            if (serverChildPid == 0){
+                printf("server child in action \n");
+                printf("after serving client sc %d cs %d\n", sc, cs);
+                // TODO wait for quit command
+                unsigned int flag = 0;
+                while (flag != 5) {
+                    flag = handle_client_request(csName, scName, sc, cs, wSize);
+                    serve_client(csName, scName, wSize, flag, &sc, &cs, clientId);
+                    printf("flag %d /n", flag);
+                }
+            }
+
+        }
     }
 
     free(bufferp);
@@ -155,30 +186,30 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
             exit(EXIT_FAILURE);
         }
         else{
-            char response[] = "Connection to server is successful\n";
-            int responseSize = sizeof (response);
-            write(*sc_fd, response, responseSize);
+            struct message *msg;
+            char *bufp = (char*) malloc(sizeof (struct message));
+            msg = (struct message*) bufp;
+            msg->type[0] = CONREPLY_TYPE;
+            snprintf(msg->data, sizeof("Connection to server is successful\n"), "%s", "Connection to server is successful\n");
+            write(*sc_fd, msg, sizeof (struct message));
         }
-
-
-    }
-    else if(messageType == 2){
-        printf("CONRESULT received");
     }
     else if(messageType == 3){
-        printf("COMLINE received");
-    }
-    else if(messageType == 4){
-        printf("COMRESULT received");
+
+
     }
     else if(messageType == 5){
-        printf("QUITREQ received");
-    }
-    else if(messageType == 6){
-        printf("QUITREPLY received");
+        printf("message: QUITREQ received\n");
+        struct message *msg;
+        char *bufp = (char*) malloc(sizeof (struct message));
+        msg = (struct message*) bufp;
+        msg->type[0] = QUITREPLY_TYPE;
+        snprintf(msg->data, sizeof("Quiting from child server\n"), "%s", "Quiting from child server\n");
+        write(*sc_fd, msg, sizeof (struct message));
     }
     else if(messageType == 7){
         printf("QUITALL received");
+
     }
     // Open named pipes for communication
     // Call handle_client_request() to handle client commands
@@ -223,7 +254,7 @@ void execute_command(const char *command_line, int sc_fd) {
 }
 
 // Function to handle client commands
-void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize) {
+unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize) {
     // Convert string parameters to file descriptors
 
     char output_file[] = "output.txt";
@@ -258,11 +289,19 @@ void handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_
                 }
             }
         }
-        printf("afa\n");
+        //printf("afa\n");
         read(cs_fd, command, sizeof(command));
+    }
+    if (strcmp(command, "quit") == 0){
+        printf("buraya geldi\n");
+        return 5;
+    }
+    else if (strcmp(command, "quitall") == 0){
+        return 7;
     }
     // Close the output file.txt
     close(output_fd);
+    return 0;
 }
 
 // Function to convert little endian format
