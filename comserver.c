@@ -13,6 +13,7 @@
 #include "msg_item.h"
 #include "message.h"
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #define MAX_CLIENTS 5
 #define MAX_PIPE_NAME 64
@@ -218,38 +219,132 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
 }
 
 void execute_command(const char *command_line, int sc_fd) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    } else if (pid == 0) {  // Child process (runner child)
-        // Redirect standard output to the output file
-        dup2(output_fd, STDOUT_FILENO);
-        close(output_fd);
+    bool isTwoCommand;
 
-        // Execute the command
-        execl("/bin/sh", "sh", "-c", command_line, NULL);
-        perror("execl");
-        exit(EXIT_FAILURE);
-    } else { // Parent process (server child)
-        // Wait for the runner child to finish
-        int status;
-        if (waitpid(pid, &status, 0) == -1) {
-            perror("waitpid");
+    char command_copy[MAX_COMMAND_LENGTH];
+    strcpy(command_copy, command_line); // Make a copy since strtok modifies the string
+
+    char *token = strtok(command_copy, "|");
+    char *command1 = NULL;
+    char *command2 = NULL;
+
+    if (token != NULL) {
+        isTwoCommand = true;
+
+        // First command before pipe
+        printf("First command: %s\n", token);
+        command1 = strdup(token);
+        // Second command after pipe
+        token = strtok(NULL, "|");
+        if (token != NULL) {
+            printf("Second command: %s\n", token);
+            command2 = strdup(token);
+        } else {
+            isTwoCommand = false;
+        }
+    } else {
+        isTwoCommand = false;
+        printf("Command: %s\n", command_line);
+    }
+
+    if (!isTwoCommand) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid == 0) {  // Child process (runner child)
+            // Redirect standard output to the output file
+            dup2(output_fd, STDOUT_FILENO);
+            close(output_fd);
+
+            // Execute the command
+            execl("/bin/sh", "sh", "-c", command_line, NULL);
+            perror("execl");
+            exit(EXIT_FAILURE);
+        } else { // Parent process (server child)
+            // Wait for the runner child to finish
+            int status;
+            if (waitpid(pid, &status, 0) == -1) {
+                perror("waitpid");
+                exit(EXIT_FAILURE);
+            }
+
+            // Read the content of the output file and send it through sc_fd
+            lseek(output_fd, 0, SEEK_SET); // Move file offset to beginning
+            char buffer[MAX_BUFFER_SIZE];
+            ssize_t bytes_read;
+            while ((bytes_read = read(output_fd, buffer, sizeof(buffer))) > 0) {
+                // Write the content to the sc pipe
+                if (write(sc_fd, buffer, bytes_read) == -1) {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+            }
+        }
+    }  else {
+        // Code for handling two commands
+
+        // Create an unnamed pipe
+        int pipe_fds[2];
+        if (pipe(pipe_fds) == -1) {
+            perror("pipe");
             exit(EXIT_FAILURE);
         }
 
-        // Read the content of the output file and send it through sc_fd
-        lseek(output_fd, 0, SEEK_SET); // Move file offset to beginning
-        char buffer[MAX_BUFFER_SIZE];
-        ssize_t bytes_read;
-        while ((bytes_read = read(output_fd, buffer, sizeof(buffer))) > 0) {
-            // Write the content to the sc pipe
-            if (write(sc_fd, buffer, bytes_read) == -1) {
-                perror("write");
-                exit(EXIT_FAILURE);
-            }
+        // Fork the first runner child process
+        pid_t pid1 = fork();
+        if (pid1 < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid1 == 0) { // First runner child process
+            // Redirect standard output to the write end of the pipe
+            dup2(pipe_fds[1], STDOUT_FILENO); // Redirect stdout to the write end of the pipe
+            close(pipe_fds[0]); // Close read end of the pipe
+            close(pipe_fds[1]); // Close write end of the pipe
+
+            //dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file
+
+            // Execute the first command
+            execl("/bin/sh", "sh", "-c", command1, NULL);
+            perror("execl");
+            exit(EXIT_FAILURE);
         }
+
+        // Fork the second runner child process
+        pid_t pid2 = fork();
+        if (pid2 < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid2 == 0) { // Second runner child process
+            // Redirect standard input to the read end of the pipe
+            dup2(pipe_fds[0], STDIN_FILENO); // Redirect stdin to the read end of the pipe
+            close(pipe_fds[0]); // Close read end of the pipe
+            close(pipe_fds[1]); // Close write end of the pipe
+
+            // Redirect standard output to the output file
+            dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file
+            close(output_fd); // Close output file descriptor
+
+            // Execute the second command
+            execl("/bin/sh", "sh", "-c", command2, NULL);
+            perror("execl");
+            exit(EXIT_FAILURE);
+        }
+
+        // Close unused ends of the pipe
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        // Wait for both runner child processes to finish
+        int status;
+        waitpid(pid1, &status, 0);
+        waitpid(pid2, &status, 0);
+    }
+    if (command1 != NULL) {
+        free(command1);
+    }
+    if (command2 != NULL) {
+        free(command2);
     }
 }
 
@@ -281,15 +376,15 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
         printf("loop %s\n", command);
         execute_command(command, sc_fd);
         //while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
-            //int noOfChunks = (int) bytes_read / wsize;
-            //printf("bytes read %d\n", (int) bytes_read);
-            //printf("no of chunks %d\n", noOfChunks);
-            //for (int i = 0; i < noOfChunks; ++i) {
-                if (write(sc_fd, command, wsize) == -1) {
-                    perror("write");
-                    exit(EXIT_FAILURE);
-                }
-            //}
+        //int noOfChunks = (int) bytes_read / wsize;
+        //printf("bytes read %d\n", (int) bytes_read);
+        //printf("no of chunks %d\n", noOfChunks);
+        //for (int i = 0; i < noOfChunks; ++i) {
+        if (write(sc_fd, command, wsize) == -1) {
+            perror("write");
+            exit(EXIT_FAILURE);
+        }
+        //}
         //}
         //printf("afa\n");
         read(cs_fd, command, sizeof(command));
