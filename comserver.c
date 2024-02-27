@@ -298,8 +298,9 @@ void execute_command(const char *command_line, int sc_fd) {
             exit(EXIT_FAILURE);
         } else if (pid1 == 0) { // First runner child process
             // Redirect standard output to the write end of the pipe
-            dup2(pipe_fds[1], STDOUT_FILENO); // Redirect stdout to the write end of the pipe
             close(pipe_fds[0]); // Close read end of the pipe
+            dup2(pipe_fds[1], STDOUT_FILENO); // Redirect stdout to the write end of the pipe
+            //write(pipe_fds[1], )
             close(pipe_fds[1]); // Close write end of the pipe
 
             //dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file
@@ -317,9 +318,19 @@ void execute_command(const char *command_line, int sc_fd) {
             exit(EXIT_FAILURE);
         } else if (pid2 == 0) { // Second runner child process
             // Redirect standard input to the read end of the pipe
-            dup2(pipe_fds[0], STDIN_FILENO); // Redirect stdin to the read end of the pipe
-            close(pipe_fds[0]); // Close read end of the pipe
             close(pipe_fds[1]); // Close write end of the pipe
+            //dup2(pipe_fds[0], STDIN_FILENO); // Redirect stdin to the read end of the pipe
+            ssize_t bytesRead;
+            char buffer[MAX_BUFFER_SIZE];
+            while ((bytesRead = read(pipe_fds[0], buffer, sizeof(buffer))) > 0) {
+                // Process or store the data as needed
+                write(STDOUT_FILENO, buffer, bytesRead);
+            }
+            //printf("buffer %s \n", buffer);
+            //ssize_t bytes_written =
+            write(output_fd, buffer, strlen(buffer));
+
+            close(pipe_fds[0]); // Close read end of the pipe
 
             // Redirect standard output to the output file
             dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file

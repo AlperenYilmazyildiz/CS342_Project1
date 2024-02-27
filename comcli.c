@@ -173,7 +173,7 @@ void receive_result(const char *sc_pipe_name, int scfd) {
     char *bufp = (char*) malloc(sizeof (struct message));
     message = (struct message*) bufp;
     read(scfd, message, sizeof (struct message));
-
+    printf("message type %d\n", message->type[0]);
     if(message->type[0] == 2){
         printf("message: CONREPLY received ");
         printf("result = %s ", message->data);
