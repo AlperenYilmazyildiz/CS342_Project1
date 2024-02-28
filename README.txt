@@ -8,3 +8,10 @@ It produces a temporary result file, the name of the file is the clients connect
 Multiple clients can connect and get correct results.
 
 The structure and execution is done according to the instructions.
+
+**HOW TO RUN**
+In first terminal: make
+In first terminal: ./comserver /MQ_NAME
+In second terminal: ./comcli /MQ_NAME -s WSIZE
+
+For batch mode: ./comcli /MQ_NAME -b file_name
