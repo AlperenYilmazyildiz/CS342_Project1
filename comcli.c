@@ -174,12 +174,12 @@ void receive_result(const char *sc_pipe_name, int scfd) {
     message = (struct message*) bufp;
     read(scfd, message, sizeof (struct message));
     printf("message type %d\n", message->type[0]);
-    if(message->type[0] == 2){
+    if(message->type[0] == 0){
         printf("message: CONREPLY received ");
         printf("result = %s ", message->data);
     }
     else if(message->type[0] == 4){
-        printf("COMRESULT received");
+        printf("COMRESULT received\n");
     }
     else if(message->type[0] == 6){
         printf("QUITREPLY received");
@@ -204,14 +204,30 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         if (strcmp(command, "quit") == 0) {
             printf("Exiting interactive mode.\n");
             //send_command(cs_pipe_name, command, cs_fd);
+            struct message *msgp;
+            char *bfrp = (char *) malloc(sizeof (struct message));
+
+            msgp = (struct message *) bfrp;
+            msgp->type[0] = QUITREQ_TYPE;
             write(cs_fd, command, sizeof(command));
+            free(bfrp);
             break;
         }
 
         // Send command to server
         printf("Sending command to server: %s\n", command);
+        struct message *msgp;
+        char *bfrp = (char *) malloc(sizeof (struct message));
+
+        msgp = (struct message *) bfrp;
+        msgp->type[0] = COMLINE_TYPE;
+        msgp->length[0] = (char) sizeof (command);
+        msgp->length[1] = 0;
+        msgp->length[2] = 0;
+        msgp->length[3] = 0;
+        snprintf(msgp->data, sizeof(struct message), "%s", command);
         //send_command(cs_pipe_name, command, cs_fd);
-        write(cs_fd, command, sizeof(command));
+        write(cs_fd, msgp, sizeof(struct message));
         printf("client receive mi\n");
         // Receive result from server
         receive_result(sc_pipe_name, sc_fd);
