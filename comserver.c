@@ -1,18 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <errno.h>
 #include <mqueue.h>
 #include <sys/wait.h>
-#include "msg_item.h"
 #include "message.h"
-#include <sys/stat.h>
 #include <stdbool.h>
 
 #define MAX_CLIENTS 5
@@ -68,21 +62,19 @@ int main(int argc, char *argv[]) {
         perror("Message queue couldn't be created\n");
         exit(1);
     }
-    printf("mq created, mq id = %d\n", (int) mq);
     mq_getattr(mq, &mqAttr);
-    printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
 
     bufferlen = mqAttr.mq_msgsize;
     bufferp = (char *) malloc(bufferlen);
 
     // Wait for incoming client connections
-    while (1) {
+    unsigned int flag = 0;
+    while (flag != 5) {
         int n = mq_receive(mq, bufferp, bufferlen, NULL);
         if (n == -1) {
             perror("mq receive failed \n");
             exit(1);
         }
-        printf("mq receive success, message size = %d\n", n);
 
         messagep = (struct message *) bufferp;
 
@@ -98,8 +90,6 @@ int main(int argc, char *argv[]) {
         messageType = messagep->type[0];
 
         data = messagep->data;
-
-        printf("message data %s\n", data);
 
         char *scName;
         char *csName;
@@ -130,7 +120,6 @@ int main(int argc, char *argv[]) {
                     perror("remove");
                     exit(EXIT_FAILURE);
                 }
-                printf("Existing output file 'output.txt' removed.\n");
             }
 
             // Open output file in append mode
@@ -148,14 +137,9 @@ int main(int argc, char *argv[]) {
             }
 
             if (serverChildPid == 0) {
-                printf("server child in action \n");
-                printf("after serving client sc %d cs %d\n", sc, cs);
-                // TODO wait for quit command
-                unsigned int flag = 0;
                 while (flag != 5) {
                     flag = handle_client_request(csName, scName, sc, cs, wSize, output_fd);
                     serve_client(csName, scName, wSize, flag, &sc, &cs, clientId);
-                    printf("flag %d /n", flag);
                 }
             }
 
@@ -164,9 +148,6 @@ int main(int argc, char *argv[]) {
 
     free(bufferp);
     mq_close(mq);
-    // Accept incoming client connections
-
-    // Fork child processes to serve clients
 
     return 0;
 }
@@ -186,8 +167,6 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
         if (*cs_fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
-        } else {
-            printf("cs pipe opened\n");
         }
 
         *sc_fd = open(sc_pipe_name, O_WRONLY);
@@ -204,21 +183,20 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
             write(*sc_fd, msg, sizeof(struct message));
         }
     } else if (messageType == 3) {
-      
+
         struct message *msg;
-        char *bufp = (char*) malloc(sizeof (struct message));
-        msg = (struct message*) bufp;
+        char *bufp = (char *) malloc(sizeof(struct message));
+        msg = (struct message *) bufp;
         read(*cs_fd, msg, sizeof(struct message));
-      
         printf("message: COMLINE received ");
         printf("len=%d, ", little_endian_convert(msg->length) + 8);
         printf("type=%d, ", msg->type[0]);
         printf("data=%s", msg->data);
 
-        char *bufp2 = (char*) malloc(sizeof (struct message));
-        msg = (struct message*) bufp2;
+        char *bufp2 = (char *) malloc(sizeof(struct message));
+        msg = (struct message *) bufp2;
         msg->type[0] = COMRESULT_TYPE;
-        write(*sc_fd, msg, sizeof (struct message));
+        write(*sc_fd, msg, sizeof(struct message));
     } else if (messageType == 5) {
         printf("message: QUITREQ received\n");
         struct message *msg;
@@ -231,10 +209,6 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
         printf("QUITALL received");
 
     }
-    // Open named pipes for communication
-    // Call handle_client_request() to handle client commands
-    // TODO: close pipes
-    // TODO: return int cs_fd and sc_fd
 }
 
 void execute_command(const char *command_line, int sc_fd) {
@@ -250,20 +224,16 @@ void execute_command(const char *command_line, int sc_fd) {
     if (token != NULL) {
         isTwoCommand = true;
 
-        // First command before pipe
-        printf("First command: %s\n", token);
         command1 = strdup(token);
         // Second command after pipe
         token = strtok(NULL, "|");
         if (token != NULL) {
-            printf("Second command: %s\n", token);
             command2 = strdup(token);
         } else {
             isTwoCommand = false;
         }
     } else {
         isTwoCommand = false;
-        printf("Command: %s\n", command_line);
     }
 
     if (!isTwoCommand) {
@@ -287,30 +257,14 @@ void execute_command(const char *command_line, int sc_fd) {
                 perror("waitpid");
                 exit(EXIT_FAILURE);
             }
-
-            // Read the content of the output file and send it through sc_fd
-            lseek(output_fd, 0, SEEK_SET); // Move file offset to beginning
-            char buffer[MAX_BUFFER_SIZE];
-            ssize_t bytes_read;
-            while ((bytes_read = read(output_fd, buffer, sizeof(buffer))) > 0) {
-                // Write the content to the sc pipe
-                if (write(sc_fd, buffer, bytes_read) == -1) {
-                    perror("write");
-                    exit(EXIT_FAILURE);
-                }
-            }
         }
     } else {
-        // Code for handling two commands
-
         // Create an unnamed pipe
         int pipe_fds[2];
         if (pipe(pipe_fds) == -1) {
             perror("pipe");
             exit(EXIT_FAILURE);
         }
-
-        // Fork the first runner child process
         // Fork the first runner child process
         pid_t pid1 = fork();
         if (pid1 < 0) {
@@ -356,7 +310,6 @@ void execute_command(const char *command_line, int sc_fd) {
         waitpid(pid2, &status, 0);
     }
 
-
     if (command1 != NULL) {
         free(command1);
     }
@@ -366,11 +319,10 @@ void execute_command(const char *command_line, int sc_fd) {
 }
 
 // Function to handle client commands
-unsigned int handle_client_request(const char *cs_fd_str, const char *sc_fd_str, int sc_fd, int cs_fd, int wsize, int output_fd) {
+unsigned int
+handle_client_request(const char *cs_fd_str, const char *sc_fd_str, int sc_fd, int cs_fd, int wsize, int output_fd) {
     // Convert string parameters to file descriptors
 
-    //char output_file[] = "output.txt";
-    //output_fd = open(output_file, O_RDONLY);
     if (output_fd == -1) {
         perror("open");
         exit(EXIT_FAILURE);
@@ -378,78 +330,57 @@ unsigned int handle_client_request(const char *cs_fd_str, const char *sc_fd_str,
 
     // Read command from cs_fd
     struct message *msg;
-    char *bufp = (char*) malloc(sizeof (struct message));
-    msg = (struct message*) bufp;
+    char *bufp = (char *) malloc(sizeof(struct message));
+    msg = (struct message *) bufp;
     ssize_t bytes_read = read(cs_fd, msg, sizeof(struct message));
-    //char command[MAX_COMMAND_LENGTH];
+
     char *command = msg->data;
-    printf("command size: %lu\n", sizeof(command));
-    //printf("command ls | ps aux size: %lu\n", sizeof("ls | ps aux"));
-    //ssize_t bytes_read = read(cs_fd, command, sizeof(command));
-    //printf("com: %s \n" , command);
+
     if (bytes_read == -1) {
         perror("read");
         exit(EXIT_FAILURE);
     }
-    printf("command: %s\n", command);
 
-    if(msg->type[0] == 3){
-        /*struct message *msg;
-        char *bufp = (char*) malloc(sizeof (struct message));
-        msg = (struct message*) bufp;
-        read(*cs_fd, msg, sizeof(struct message));*/
-
+    if (msg->type[0] == 3) {
         printf("message: COMLINE received ");
         printf("len=%d, ", little_endian_convert(msg->length) + 8);
         printf("type=%d, ", msg->type[0]);
         printf("data=%s", command);
 
         msg->type[0] = COMRESULT_TYPE;
-        write(sc_fd, msg, sizeof (struct message));
+        write(sc_fd, msg, sizeof(struct message));
     }
 
     // Send the result back to the client through sc_fd
-    while (strcmp(command, "quit") != 0) {
+    while (strcmp(command, "quit") != 0 && strcmp(command, "quitall") != 0) {
         // Execute command and write result to sc_fd
-        //printf("loop %s\n", command);
         execute_command(command, sc_fd);
-        //while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
-        //int noOfChunks = (int) bytes_read / wsize;
-        //printf("bytes read %d\n", (int) bytes_read);
-        //printf("no of chunks %d\n", noOfChunks);
-        //for (int i = 0; i < noOfChunks; ++i) {
+
         if (write(sc_fd, command, wsize) == -1) {
             perror("write");
             exit(EXIT_FAILURE);
         }
-        //}
-        //}
-        //printf("afa\n");
-        struct message *msg2;
-        char *bufp2 = (char*) malloc(sizeof (struct message));
-        msg2 = (struct message*) bufp2;
-        read(cs_fd, msg2, sizeof(struct message));
-        //char command[MAX_COMMAND_LENGTH];
-        command = msg2->data;
-        printf("command size: %lu\n", sizeof(command));
-        //read(cs_fd, command, sizeof(command));
-        if(msg2->type[0] == 3){
-            /*struct message *msg;
-            char *bufp = (char*) malloc(sizeof (struct message));
-            msg = (struct message*) bufp;
-            read(*cs_fd, msg, sizeof(struct message));*/
 
+        // Read the content of the output file and send it through sc_fd
+        struct message *msg2;
+        char *bufp2 = (char *) malloc(sizeof(struct message));
+        msg2 = (struct message *) bufp2;
+        read(cs_fd, msg2, sizeof(struct message));
+        command = msg2->data;
+
+        if (msg2->type[0] == 3) {
             printf("message: COMLINE received ");
             printf("len=%d, ", little_endian_convert(msg->length) + 8);
             printf("type=%d, ", msg2->type[0]);
             printf("data=%s\n", command);
-
             msg2->type[0] = COMRESULT_TYPE;
-            write(sc_fd, msg2, sizeof (struct message));
+            lseek(output_fd, 0, SEEK_SET); // Move file offset to beginning
+            char buffer[MAX_BUFFER_SIZE];
+            read(output_fd, buffer, sizeof(buffer));
+            write(sc_fd, msg2, sizeof(struct message));
         }
     }
     if (strcmp(command, "quit") == 0) {
-        printf("buraya geldi\n");
         return 5;
     } else if (strcmp(command, "quitall") == 0) {
         return 7;

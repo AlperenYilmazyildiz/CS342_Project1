@@ -147,7 +147,9 @@ bool receive_result(const char *sc_pipe_name, int scfd) {
             printf("message: CONREPLY received ");
             break;
         case COMRESULT_TYPE:
-            printf("Command Result: %s\n", message->data);
+            printf("message: COMRESULT received: ");
+            printf("command result: \n");
+            printf("%s \n", message->data);
             break;
         case QUITREPLY_TYPE:
             printf("Quit Reply: %s\n", message->data);
@@ -181,7 +183,8 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
 
             msgp = (struct message *) bfrp;
             msgp->type[0] = QUITREQ_TYPE;
-            write(cs_fd, command, sizeof(command));
+            snprintf(msgp->data, sizeof("quit"), "%s", "quit");
+            write(cs_fd, msgp, sizeof(struct message));
             free(bfrp);
             break;
         }
@@ -214,6 +217,32 @@ void batch_mode(const char *mq_name, const char *com_file, int cs_fd, int sc_fd,
     while (fgets(command, sizeof(command), file) != NULL) {
         // Remove newline
         command[strcspn(command, "\n")] = '\0';
+
+        // Check if the user wants to exit
+        if (strcmp(command, "quit") == 0) {
+            struct message *msgp;
+            char *bfrp = (char *) malloc(sizeof (struct message));
+
+            msgp = (struct message *) bfrp;
+            msgp->type[0] = QUITREQ_TYPE;
+            snprintf(msgp->data, sizeof("quit"), "%s", "quit");
+            write(cs_fd, msgp, sizeof(struct message));
+            free(bfrp);
+            break;
+        }
+
+        // Send command to server
+        struct message *msgp;
+        char *bfrp = (char *) malloc(sizeof (struct message));
+
+        msgp = (struct message *) bfrp;
+        msgp->type[0] = COMLINE_TYPE;
+        msgp->length[0] = (char) sizeof (command);
+        msgp->length[1] = 0;
+        msgp->length[2] = 0;
+        msgp->length[3] = 0;
+        snprintf(msgp->data, sizeof(struct message), "%s", command);
+        write(cs_fd, msgp, sizeof(struct message));
 
         // Send command
         if (write(cs_fd, command, sizeof(command)) == -1) {

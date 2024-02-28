@@ -15,3 +15,5 @@ In first terminal: ./comserver /MQ_NAME
 In second terminal: ./comcli /MQ_NAME -s WSIZE
 
 For batch mode: ./comcli /MQ_NAME -b file_name
+
+To see result look at .txt file that is generated with the client number

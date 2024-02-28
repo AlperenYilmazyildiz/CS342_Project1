@@ -1,0 +1,5 @@
+ls
+echo "\n\n"
+ps aux
+echo "\n\n"
+cat cat.txt | wc
