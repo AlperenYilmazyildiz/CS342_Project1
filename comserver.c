@@ -37,8 +37,12 @@ struct message *messagep;
 int output_fd;
 
 // Function prototypes
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid);
-unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize);
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd,
+                  int *cs_fd, int pid);
+
+unsigned int
+handle_client_request(const char *cs_fd_str, const char *sc_fd_str, int sc_fd, int cs_fd, int wsize, int output_fd);
+
 unsigned int little_endian_convert(unsigned char data[4]);
 
 int main(int argc, char *argv[]) {
@@ -60,7 +64,7 @@ int main(int argc, char *argv[]) {
 
     mq = mq_open(MQNAME, O_CREAT, 0666, NULL);
 
-    if(mq == -1){
+    if (mq == -1) {
         perror("Message queue couldn't be created\n");
         exit(1);
     }
@@ -68,37 +72,19 @@ int main(int argc, char *argv[]) {
     mq_getattr(mq, &mqAttr);
     printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
 
-    // Check if the output file already exists
-    struct stat st;
-    if (stat("output.txt", &st) == 0) {
-        // Output file exists, remove it
-        if (remove("output.txt") == -1) {
-            perror("remove");
-            exit(EXIT_FAILURE);
-        }
-        printf("Existing output file 'output.txt' removed.\n");
-    }
-
-    // Open output file in append mode
-    output_fd = open("output.txt", O_CREAT | O_WRONLY | O_APPEND, 0666);
-    if (output_fd == -1) {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
-
     bufferlen = mqAttr.mq_msgsize;
-    bufferp = (char*) malloc(bufferlen);
+    bufferp = (char *) malloc(bufferlen);
 
     // Wait for incoming client connections
-    while (1){
+    while (1) {
         int n = mq_receive(mq, bufferp, bufferlen, NULL);
-        if(n == -1){
+        if (n == -1) {
             perror("mq receive failed \n");
             exit(1);
         }
         printf("mq receive success, message size = %d\n", n);
 
-        messagep = (struct message*) bufferp;
+        messagep = (struct message *) bufferp;
 
         unsigned char length[4];
         unsigned int messageType;
@@ -128,23 +114,46 @@ int main(int argc, char *argv[]) {
         int sc, cs;
         serve_client(csName, scName, wSize, messageType, &sc, &cs, clientId);
 
-        if(messageType == 1 && currentClientCount < MAX_CLIENTS){
+        if (messageType == 1 && currentClientCount < MAX_CLIENTS) {
             pid_t serverChildPid;
             currentClientCount++;
+
+            // Convert currentClientCount to a string
+            char filename[20]; // Adjust the buffer size as needed
+            sprintf(filename, "%d", currentClientCount);
+
+            // Check if the output file already exists
+            struct stat st;
+            if (stat(filename, &st) == 0) {
+                // Output file exists, remove it
+                if (remove(filename) == -1) {
+                    perror("remove");
+                    exit(EXIT_FAILURE);
+                }
+                printf("Existing output file 'output.txt' removed.\n");
+            }
+
+            // Open output file in append mode
+            output_fd = open(filename, O_CREAT | O_WRONLY | O_APPEND, 0666);
+            if (output_fd == -1) {
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+
             serverChildPid = fork();
 
             if (serverChildPid < 0) {
-                printf ("fork() failed\n");
-                exit (1);
+                printf("fork() failed\n");
+                exit(1);
             }
 
-            if (serverChildPid == 0){
+            if (serverChildPid == 0) {
                 printf("server child in action \n");
                 printf("after serving client sc %d cs %d\n", sc, cs);
                 // TODO wait for quit command
                 unsigned int flag = 0;
                 while (flag != 5) {
-                    flag = handle_client_request(csName, scName, sc, cs, wSize);
+                    flag = handle_client_request(csName, scName, sc, cs, wSize, output_fd);
                     serve_client(csName, scName, wSize, flag, &sc, &cs, clientId);
                     printf("flag %d /n", flag);
                 }
@@ -163,9 +172,10 @@ int main(int argc, char *argv[]) {
 }
 
 // Function to serve a connected client
-void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd, int *cs_fd, int pid) {
+void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize, unsigned int messageType, int *sc_fd,
+                  int *cs_fd, int pid) {
     // TODO: Implement client-serving logic
-    if(messageType == 1){
+    if (messageType == 1) {
         printf("message: CONREQUEST received ");
         printf("cs name = %s ", cs_pipe_name);
         printf("sc name =  %s ", sc_pipe_name);
@@ -176,8 +186,7 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
         if (*cs_fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
-        }
-        else{
+        } else {
             printf("cs pipe opened\n");
         }
 
@@ -185,30 +194,27 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
         if (*sc_fd == -1) {
             perror("open");
             exit(EXIT_FAILURE);
-        }
-        else{
+        } else {
             struct message *msg;
-            char *bufp = (char*) malloc(sizeof (struct message));
-            msg = (struct message*) bufp;
+            char *bufp = (char *) malloc(sizeof(struct message));
+            msg = (struct message *) bufp;
             msg->type[0] = CONREPLY_TYPE;
-            snprintf(msg->data, sizeof("Connection to server is successful\n"), "%s", "Connection to server is successful\n");
-            write(*sc_fd, msg, sizeof (struct message));
+            snprintf(msg->data, sizeof("Connection to server is successful\n"), "%s",
+                     "Connection to server is successful\n");
+            write(*sc_fd, msg, sizeof(struct message));
         }
-    }
-    else if(messageType == 3){
+    } else if (messageType == 3) {
 
 
-    }
-    else if(messageType == 5){
+    } else if (messageType == 5) {
         printf("message: QUITREQ received\n");
         struct message *msg;
-        char *bufp = (char*) malloc(sizeof (struct message));
-        msg = (struct message*) bufp;
+        char *bufp = (char *) malloc(sizeof(struct message));
+        msg = (struct message *) bufp;
         msg->type[0] = QUITREPLY_TYPE;
         snprintf(msg->data, sizeof("Quiting from child server\n"), "%s", "Quiting from child server\n");
-        write(*sc_fd, msg, sizeof (struct message));
-    }
-    else if(messageType == 7){
+        write(*sc_fd, msg, sizeof(struct message));
+    } else if (messageType == 7) {
         printf("QUITALL received");
 
     }
@@ -281,7 +287,7 @@ void execute_command(const char *command_line, int sc_fd) {
                 }
             }
         }
-    }  else {
+    } else {
         // Code for handling two commands
 
         // Create an unnamed pipe
@@ -292,53 +298,38 @@ void execute_command(const char *command_line, int sc_fd) {
         }
 
         // Fork the first runner child process
+        // Fork the first runner child process
         pid_t pid1 = fork();
         if (pid1 < 0) {
             perror("fork");
             exit(EXIT_FAILURE);
         } else if (pid1 == 0) { // First runner child process
             // Redirect standard output to the write end of the pipe
-            close(pipe_fds[0]); // Close read end of the pipe
             dup2(pipe_fds[1], STDOUT_FILENO); // Redirect stdout to the write end of the pipe
-            //write(pipe_fds[1], )
-            close(pipe_fds[1]); // Close write end of the pipe
-
-            //dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file
+            close(pipe_fds[0]); // Close unused read end of the pipe
 
             // Execute the first command
-            execl("/bin/sh", "sh", "-c", command1, NULL);
-            perror("execl");
+            execlp("/bin/sh", "sh", "-c", command1, NULL);
+            perror("execlp");
             exit(EXIT_FAILURE);
         }
 
-        // Fork the second runner child process
+// Fork the second runner child process
         pid_t pid2 = fork();
         if (pid2 < 0) {
             perror("fork");
             exit(EXIT_FAILURE);
         } else if (pid2 == 0) { // Second runner child process
             // Redirect standard input to the read end of the pipe
-            close(pipe_fds[1]); // Close write end of the pipe
-            //dup2(pipe_fds[0], STDIN_FILENO); // Redirect stdin to the read end of the pipe
-            ssize_t bytesRead;
-            char buffer[MAX_BUFFER_SIZE];
-            while ((bytesRead = read(pipe_fds[0], buffer, sizeof(buffer))) > 0) {
-                // Process or store the data as needed
-                write(STDOUT_FILENO, buffer, bytesRead);
-            }
-            //printf("buffer %s \n", buffer);
-            //ssize_t bytes_written =
-            write(output_fd, buffer, strlen(buffer));
-
-            close(pipe_fds[0]); // Close read end of the pipe
+            dup2(pipe_fds[0], STDIN_FILENO); // Redirect stdin to the read end of the pipe
+            close(pipe_fds[1]); // Close unused write end of the pipe
 
             // Redirect standard output to the output file
             dup2(output_fd, STDOUT_FILENO); // Redirect stdout to the output file
-            close(output_fd); // Close output file descriptor
 
             // Execute the second command
-            execl("/bin/sh", "sh", "-c", command2, NULL);
-            perror("execl");
+            execlp("/bin/sh", "sh", "-c", command2, NULL);
+            perror("execlp");
             exit(EXIT_FAILURE);
         }
 
@@ -351,6 +342,8 @@ void execute_command(const char *command_line, int sc_fd) {
         waitpid(pid1, &status, 0);
         waitpid(pid2, &status, 0);
     }
+
+
     if (command1 != NULL) {
         free(command1);
     }
@@ -360,11 +353,11 @@ void execute_command(const char *command_line, int sc_fd) {
 }
 
 // Function to handle client commands
-unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str, int sc_fd, int cs_fd, int wsize) {
+unsigned int handle_client_request(const char *cs_fd_str, const char *sc_fd_str, int sc_fd, int cs_fd, int wsize, int output_fd) {
     // Convert string parameters to file descriptors
 
-    char output_file[] = "output.txt";
-    int output_fd = open(output_file, O_RDONLY);
+    //char output_file[] = "output.txt";
+    //output_fd = open(output_file, O_RDONLY);
     if (output_fd == -1) {
         perror("open");
         exit(EXIT_FAILURE);
@@ -382,7 +375,7 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
     printf("command: %s\n", command);
 
     // Send the result back to the client through sc_fd
-    while (strcmp(command, "quit") != 0 ){
+    while (strcmp(command, "quit") != 0) {
         // Execute command and write result to sc_fd
         printf("loop %s\n", command);
         execute_command(command, sc_fd);
@@ -400,11 +393,10 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
         //printf("afa\n");
         read(cs_fd, command, sizeof(command));
     }
-    if (strcmp(command, "quit") == 0){
+    if (strcmp(command, "quit") == 0) {
         printf("buraya geldi\n");
         return 5;
-    }
-    else if (strcmp(command, "quitall") == 0){
+    } else if (strcmp(command, "quitall") == 0) {
         return 7;
     }
     // Close the output file.txt
@@ -413,7 +405,7 @@ unsigned int handle_client_request(const char* cs_fd_str, const char* sc_fd_str,
 }
 
 // Function to convert little endian format
-unsigned int little_endian_convert(unsigned char data[4]){
+unsigned int little_endian_convert(unsigned char data[4]) {
     unsigned int x = (data[3] << 24) + (data[2] << 16) + (data[1] << 8) + (data[0]);
     return x;
 }
