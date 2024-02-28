@@ -204,8 +204,21 @@ void serve_client(const char *cs_pipe_name, const char *sc_pipe_name, int wsize,
             write(*sc_fd, msg, sizeof(struct message));
         }
     } else if (messageType == 3) {
+      
+        struct message *msg;
+        char *bufp = (char*) malloc(sizeof (struct message));
+        msg = (struct message*) bufp;
+        read(*cs_fd, msg, sizeof(struct message));
+      
+        printf("message: COMLINE received ");
+        printf("len=%d, ", little_endian_convert(msg->length) + 8);
+        printf("type=%d, ", msg->type[0]);
+        printf("data=%s", msg->data);
 
-
+        char *bufp2 = (char*) malloc(sizeof (struct message));
+        msg = (struct message*) bufp2;
+        msg->type[0] = COMRESULT_TYPE;
+        write(*sc_fd, msg, sizeof (struct message));
     } else if (messageType == 5) {
         printf("message: QUITREQ received\n");
         struct message *msg;
@@ -364,20 +377,41 @@ unsigned int handle_client_request(const char *cs_fd_str, const char *sc_fd_str,
     }
 
     // Read command from cs_fd
-    char command[MAX_COMMAND_LENGTH];
+    struct message *msg;
+    char *bufp = (char*) malloc(sizeof (struct message));
+    msg = (struct message*) bufp;
+    ssize_t bytes_read = read(cs_fd, msg, sizeof(struct message));
+    //char command[MAX_COMMAND_LENGTH];
+    char *command = msg->data;
     printf("command size: %lu\n", sizeof(command));
-    printf("command ls | ps aux size: %lu\n", sizeof("ls | ps aux"));
-    ssize_t bytes_read = read(cs_fd, command, sizeof(command));
+    //printf("command ls | ps aux size: %lu\n", sizeof("ls | ps aux"));
+    //ssize_t bytes_read = read(cs_fd, command, sizeof(command));
+    //printf("com: %s \n" , command);
     if (bytes_read == -1) {
         perror("read");
         exit(EXIT_FAILURE);
     }
     printf("command: %s\n", command);
 
+    if(msg->type[0] == 3){
+        /*struct message *msg;
+        char *bufp = (char*) malloc(sizeof (struct message));
+        msg = (struct message*) bufp;
+        read(*cs_fd, msg, sizeof(struct message));*/
+
+        printf("message: COMLINE received ");
+        printf("len=%d, ", little_endian_convert(msg->length) + 8);
+        printf("type=%d, ", msg->type[0]);
+        printf("data=%s", command);
+
+        msg->type[0] = COMRESULT_TYPE;
+        write(sc_fd, msg, sizeof (struct message));
+    }
+
     // Send the result back to the client through sc_fd
     while (strcmp(command, "quit") != 0) {
         // Execute command and write result to sc_fd
-        printf("loop %s\n", command);
+        //printf("loop %s\n", command);
         execute_command(command, sc_fd);
         //while ((bytes_read = read(output_fd, command, sizeof(command))) > 0) {
         //int noOfChunks = (int) bytes_read / wsize;
@@ -391,7 +425,28 @@ unsigned int handle_client_request(const char *cs_fd_str, const char *sc_fd_str,
         //}
         //}
         //printf("afa\n");
-        read(cs_fd, command, sizeof(command));
+        struct message *msg2;
+        char *bufp2 = (char*) malloc(sizeof (struct message));
+        msg2 = (struct message*) bufp2;
+        read(cs_fd, msg2, sizeof(struct message));
+        //char command[MAX_COMMAND_LENGTH];
+        command = msg2->data;
+        printf("command size: %lu\n", sizeof(command));
+        //read(cs_fd, command, sizeof(command));
+        if(msg2->type[0] == 3){
+            /*struct message *msg;
+            char *bufp = (char*) malloc(sizeof (struct message));
+            msg = (struct message*) bufp;
+            read(*cs_fd, msg, sizeof(struct message));*/
+
+            printf("message: COMLINE received ");
+            printf("len=%d, ", little_endian_convert(msg->length) + 8);
+            printf("type=%d, ", msg2->type[0]);
+            printf("data=%s\n", command);
+
+            msg2->type[0] = COMRESULT_TYPE;
+            write(sc_fd, msg2, sizeof (struct message));
+        }
     }
     if (strcmp(command, "quit") == 0) {
         printf("buraya geldi\n");
