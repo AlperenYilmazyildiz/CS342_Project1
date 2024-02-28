@@ -30,7 +30,6 @@ char *bufferp;
 int bufferlen;
 struct message *messagep;
 
-// Function prototypes
 void create_named_pipe(const char *pipe_name);
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE);
 void send_command(const char *cs_pipe_name, char *command, int csfd);
@@ -55,8 +54,6 @@ int main(int argc, char *argv[]) {
     char COMFILE[MAXFILENAME];
     snprintf(COMFILE, sizeof(COMFILE), "%s", argv[2]);
 
-    printf("%s %s %d", MQNAME, COMFILE, WSIZE);
-
     // Named pipe names
     char cs_pipe_name[MAX_PIPE_NAME];
     char sc_pipe_name[MAX_PIPE_NAME];
@@ -67,7 +64,6 @@ int main(int argc, char *argv[]) {
     create_named_pipe(cs_pipe_name);
     create_named_pipe(sc_pipe_name);
 
-    // Send connection request to server
     send_connection_request(MQNAME, cs_pipe_name, sc_pipe_name, client_id, WSIZE);
 
     // open pipes
@@ -76,54 +72,32 @@ int main(int argc, char *argv[]) {
         perror("open");
         exit(EXIT_FAILURE);
     }
-    else{
-        printf("cs pipe opened\n");
-    }
 
     int sc_fd = open(sc_pipe_name, O_RDONLY);
     if (sc_fd == -1) {
         perror("open");
         exit(EXIT_FAILURE);
     }
-    else{
-        printf("sc pipe opened\n");
-    }
-
-    // Wait for server response
-    // TODO: Implement wait for server response
-    /*char connectionResult[30];
-    read(sc_fd, connectionResult, sizeof(connectionResult));
-    printf("%s\n", connectionResult);*/
 
     receive_result(sc_pipe_name, sc_fd);
 
-    // Check for batch mode
+    // Check for mode
     if (argc > 2 && strcmp(argv[2], "-b") == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: %s MQNAME -b COMFILE\n", argv[0]);
             exit(EXIT_FAILURE);
         }
-        // Batch modee
         const char *com_file = argv[3];
         batch_mode(MQNAME, com_file, cs_fd, sc_fd, sc_pipe_name);
     } else {
-        // Interactive mode
         interactive_mode(cs_pipe_name, sc_pipe_name, cs_fd, sc_fd);
     }
-
-    // TODO: Parse command-line arguments and call appropriate mode
-    // Interactive mode or batch mode
-
     return 0;
 }
 
-// Function to send connection request to server
+// Send connection request message to server over message queue
+// Include cs_pipe_name, sc_pipe_name, client_id, and WSIZE in the message
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE) {
-    // Send connection request message to server over message queue
-    // Include cs_pipe_name, sc_pipe_name, client_id, and WSIZE in the message
-    // TODO: Implement sending connection request message
-
-    // TODO send connection request message to server with message queue
     mqd_t mq;
     struct mq_attr mqAttr;
     int n;
@@ -133,10 +107,8 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
         perror("cannot open msg queue\n");
         exit(1);
     }
-    printf("mq opened, mq id = %d\n", (int)mq);
 
     mq_getattr(mq, &mqAttr);
-    printf("mq maximum msgsize = %d\n", (int) mqAttr.mq_msgsize);
     bufferlen = mqAttr.mq_msgsize;
     bufferp = (char *) malloc(bufferlen);
 
@@ -147,24 +119,11 @@ void send_connection_request(const char *mq_name, const char *cs_pipe_name, cons
     messagep->length[2] = 0;
     messagep->length[3] = 0;
     snprintf(messagep->data, sizeof(struct message), "%s %s %d %d", sc_pipe_name,  cs_pipe_name, client_id, WSIZE);
-    printf("comcli message data %s\n", messagep->data);
     n = mq_send(mq, bufferp, sizeof(struct message), 0);
     if (n == -1){
         perror("mq send failed \n");
         exit(1);
     }
-
-    // TODO: close message queue
-}
-
-// Function to send command to server
-void send_command(const char *cs_pipe_name, char *command, int csfd) {
-    // Send command to server child process through cs_pipe
-    // TODO: Implement sending command to server
-    // This is problematic
-    printf("size of send command: %lu\n", sizeof(command));
-    write(csfd, command, sizeof(command));
-
 }
 
 bool receive_result(const char *sc_pipe_name, int scfd) {
@@ -174,22 +133,18 @@ bool receive_result(const char *sc_pipe_name, int scfd) {
     char *bufp = (char*) malloc(sizeof (struct message));
     message = (struct message*) bufp;
     ssize_t bytes_read = read(scfd, message, sizeof (struct message));
-    printf("message type %d\n", message->type[0]);
 
     if (bytes_read < 0) {
         perror("read");
-        return false; // Error reading from socket
+        return false;
     } else if (bytes_read == 0) {
-        // The server has closed the connection
-        printf("Server closed the connection.\n");
-        return true; // Treat as successful, but end of communication
+        return true;
     }
 
     // Process the received message based on its type
     switch (message->type[0]) {
         case CONREPLY_TYPE:
             printf("message: CONREPLY received ");
-            printf("result = %s ", message->data);
             break;
         case COMRESULT_TYPE:
             printf("Command Result: %s\n", message->data);
@@ -202,11 +157,10 @@ bool receive_result(const char *sc_pipe_name, int scfd) {
             break;
     }
 
-    return true; // Successful read and processing of message
+    return true;
 }
 
-
-// Function to operate in interactive mode
+// Function for interactive mode
 void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd) {
     printf("Interactive mode: Enter commands (type 'quit' to quit):\n");
     char command[MAX_COMMAND_LENGTH];
@@ -216,14 +170,12 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
             perror("fgets");
             exit(EXIT_FAILURE);
         }
-        // Remove trailing newline character
+        // Remove newline
         command[strcspn(command, "\n")] = '\0';
-        printf("size of command in interactive mode: %lu\n", sizeof(command));
 
         // Check if the user wants to exit
         if (strcmp(command, "quit") == 0) {
             printf("Exiting interactive mode.\n");
-            //send_command(cs_pipe_name, command, cs_fd);
             struct message *msgp;
             char *bfrp = (char *) malloc(sizeof (struct message));
 
@@ -234,8 +186,7 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
             break;
         }
 
-        // Send command to server
-        printf("Sending command to server: %s\n", command);
+        // Send command
         struct message *msgp;
         char *bfrp = (char *) malloc(sizeof (struct message));
 
@@ -246,12 +197,9 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         msgp->length[2] = 0;
         msgp->length[3] = 0;
         snprintf(msgp->data, sizeof(struct message), "%s", command);
-        //send_command(cs_pipe_name, command, cs_fd);
         write(cs_fd, msgp, sizeof(struct message));
-        printf("client receive mi\n");
-        // Receive result from server
+        // Receive result
         bool result_received = receive_result(sc_pipe_name, sc_fd);
-        printf("Receive result bool: %d\n", result_received);
     }
 }
 
@@ -264,49 +212,33 @@ void batch_mode(const char *mq_name, const char *com_file, int cs_fd, int sc_fd,
 
     char command[MAX_COMMAND_LENGTH];
     while (fgets(command, sizeof(command), file) != NULL) {
-        // Remove trailing newline character
+        // Remove newline
         command[strcspn(command, "\n")] = '\0';
 
-        // Send command to server
-        printf("Sending command to server: %s\n", command);
+        // Send command
         if (write(cs_fd, command, sizeof(command)) == -1) {
             perror("write");
             exit(EXIT_FAILURE);
         }
         // Check if end of file has been reached
         if (feof(file)) {
-            printf("Receive result end of file reached\n");
             receive_result(sc_pipe_name, sc_fd);
             break;
         }
     }
-
     fclose(file);
 }
 
 // Function to create a named pipe
 void create_named_pipe(const char *pipe_name) {
-    // Check if the named pipe exists
     if (access(pipe_name, F_OK) != -1) {
         // Named pipe already exists
         printf("Named pipe %s already exists.\n", pipe_name);
-        // Handle the situation as needed, e.g., delete the existing file
-        // unlink(pipe_name);
     } else {
         // Named pipe doesn't exist, create it
         if (mkfifo(pipe_name, 0666) == -1) {
             perror("mkfifo");
             exit(EXIT_FAILURE);
         }
-        printf("Named pipe %s created successfully.\n", pipe_name);
     }
-
-    // Open the named pipe for reading and writing
-    /*int fd = open(pipe_name, O_RDWR);
-    if (fd == -1) {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
-
-    return fd;*/
 }
