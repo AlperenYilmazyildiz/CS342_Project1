@@ -173,7 +173,7 @@ bool receive_result(const char *sc_pipe_name, int scfd) {
     struct message *message;
     char *bufp = (char*) malloc(sizeof (struct message));
     message = (struct message*) bufp;
-    read(scfd, message, sizeof (struct message));
+    ssize_t bytes_read = read(scfd, message, sizeof (struct message));
     printf("message type %d\n", message->type[0]);
 
     if (bytes_read < 0) {
@@ -186,16 +186,16 @@ bool receive_result(const char *sc_pipe_name, int scfd) {
     }
 
     // Process the received message based on its type
-    switch (message.type[0]) {
+    switch (message->type[0]) {
         case CONREPLY_TYPE:
             printf("message: CONREPLY received ");
             printf("result = %s ", message->data);
             break;
         case COMRESULT_TYPE:
-            printf("Command Result: %s\n", message.data);
+            printf("Command Result: %s\n", message->data);
             break;
         case QUITREPLY_TYPE:
-            printf("Quit Reply: %s\n", message.data);
+            printf("Quit Reply: %s\n", message->data);
             break;
         default:
             printf("Unknown message type received.\n");
