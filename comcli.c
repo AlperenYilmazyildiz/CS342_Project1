@@ -7,6 +7,7 @@
 #include <string.h>
 #include <errno.h>
 #include <mqueue.h>
+#include <stdbool.h>
 #include "msg_item.h"
 #include "message.h"
 
@@ -14,6 +15,7 @@
 #define MAXFILENAME 64
 #define MAX_COMMAND_LENGTH 256
 #define MAX_BUFFER_SIZE 1024
+#define MAX_COMMANDS 100 // Maximum number of commands to store
 
 // Define constants for message types
 #define CONREQUEST_TYPE 1
@@ -32,9 +34,9 @@ struct message *messagep;
 void create_named_pipe(const char *pipe_name);
 void send_connection_request(const char *mq_name, const char *cs_pipe_name, const char *sc_pipe_name, int client_id, int WSIZE);
 void send_command(const char *cs_pipe_name, char *command, int csfd);
-void receive_result(const char *sc_pipe_name, int scfd);
+bool receive_result(const char *sc_pipe_name, int scfd);
 void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd);
-void batch_mode(const char *mq_name, const char *com_file);
+void batch_mode(const char *mq_name, const char *com_file, int cs_fd, int sc_fd, const char *sc_pipe_name);
 
 int main(int argc, char *argv[]) {
     // Check command-line arguments
@@ -103,7 +105,7 @@ int main(int argc, char *argv[]) {
         }
         // Batch modee
         const char *com_file = argv[3];
-        batch_mode(MQNAME, com_file);
+        batch_mode(MQNAME, com_file, cs_fd, sc_fd, sc_pipe_name);
     } else {
         // Interactive mode
         interactive_mode(cs_pipe_name, sc_pipe_name, cs_fd, sc_fd);
@@ -165,8 +167,7 @@ void send_command(const char *cs_pipe_name, char *command, int csfd) {
 
 }
 
-// Function to receive result from server
-void receive_result(const char *sc_pipe_name, int scfd) {
+bool receive_result(const char *sc_pipe_name, int scfd) {
     // Receive result from server through sc_pipe
     // TODO: Implement receiving result from server
     struct message *message;
@@ -174,17 +175,36 @@ void receive_result(const char *sc_pipe_name, int scfd) {
     message = (struct message*) bufp;
     read(scfd, message, sizeof (struct message));
     printf("message type %d\n", message->type[0]);
-    if(message->type[0] == 0){
-        printf("message: CONREPLY received ");
-        printf("result = %s ", message->data);
+
+    if (bytes_read < 0) {
+        perror("read");
+        return false; // Error reading from socket
+    } else if (bytes_read == 0) {
+        // The server has closed the connection
+        printf("Server closed the connection.\n");
+        return true; // Treat as successful, but end of communication
     }
-    else if(message->type[0] == 4){
-        printf("COMRESULT received\n");
+
+    // Process the received message based on its type
+    switch (message.type[0]) {
+        case CONREPLY_TYPE:
+            printf("message: CONREPLY received ");
+            printf("result = %s ", message->data);
+            break;
+        case COMRESULT_TYPE:
+            printf("Command Result: %s\n", message.data);
+            break;
+        case QUITREPLY_TYPE:
+            printf("Quit Reply: %s\n", message.data);
+            break;
+        default:
+            printf("Unknown message type received.\n");
+            break;
     }
-    else if(message->type[0] == 6){
-        printf("QUITREPLY received");
-    }
+
+    return true; // Successful read and processing of message
 }
+
 
 // Function to operate in interactive mode
 void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs_fd, int sc_fd) {
@@ -230,27 +250,35 @@ void interactive_mode(const char *cs_pipe_name, const char *sc_pipe_name, int cs
         write(cs_fd, msgp, sizeof(struct message));
         printf("client receive mi\n");
         // Receive result from server
-        receive_result(sc_pipe_name, sc_fd);
-        printf("skfj\n");
+        bool result_received = receive_result(sc_pipe_name, sc_fd);
+        printf("Receive result bool: %d\n", result_received);
     }
 }
-// Function to operate in batch mode
-void batch_mode(const char *mq_name, const char *com_file) {
-    printf("Batch mode: Reading commands from file '%s'\n", com_file);
+
+void batch_mode(const char *mq_name, const char *com_file, int cs_fd, int sc_fd, const char *sc_pipe_name) {
     FILE *file = fopen(com_file, "r");
     if (file == NULL) {
         perror("fopen");
         exit(EXIT_FAILURE);
     }
 
-    char command[100];
+    char command[MAX_COMMAND_LENGTH];
     while (fgets(command, sizeof(command), file) != NULL) {
         // Remove trailing newline character
         command[strcspn(command, "\n")] = '\0';
 
         // Send command to server
         printf("Sending command to server: %s\n", command);
-        // TODO: Send command to server using message queue
+        if (write(cs_fd, command, sizeof(command)) == -1) {
+            perror("write");
+            exit(EXIT_FAILURE);
+        }
+        // Check if end of file has been reached
+        if (feof(file)) {
+            printf("Receive result end of file reached\n");
+            receive_result(sc_pipe_name, sc_fd);
+            break;
+        }
     }
 
     fclose(file);
@@ -282,4 +310,3 @@ void create_named_pipe(const char *pipe_name) {
 
     return fd;*/
 }
-
